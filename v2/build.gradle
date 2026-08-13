@@ -1,0 +1,122 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "org.jetbrains.kotlin.plugin.compose"
+    id "com.google.devtools.ksp"
+}
+
+def signingPropertiesFile = rootProject.file(".signing/signing.properties")
+def signingProperties = new Properties()
+if (signingPropertiesFile.exists()) {
+    signingPropertiesFile.withInputStream { signingProperties.load(it) }
+
+    ["storeFile", "storePassword", "keyAlias", "keyPassword"].each { propertyName ->
+        if (!signingProperties.getProperty(propertyName)) {
+            throw new GradleException("Missing ${propertyName} in .signing/signing.properties")
+        }
+    }
+}
+
+android {
+    namespace "ru.simple.mycalendar.v2"
+    compileSdk 35
+    buildToolsVersion "35.0.0"
+
+    signingConfigs {
+        if (signingPropertiesFile.exists()) {
+            stableRelease {
+                storeFile rootProject.file(signingProperties.getProperty("storeFile"))
+                storePassword signingProperties.getProperty("storePassword")
+                keyAlias signingProperties.getProperty("keyAlias")
+                keyPassword signingProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId "io.github.alexaistudio.familytasks"
+        minSdk 26
+        targetSdk 35
+        versionCode 20018
+        versionName "2.0.18"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        debug {
+            // Debug is deliberately isolated from production: it has another package ID
+            // and uses Gradle's normal debug key, never the permanent release key.
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            if (signingPropertiesFile.exists()) signingConfig signingConfigs.stableRelease
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+
+    packaging {
+        resources {
+            excludes += ["META-INF/LICENSE*", "META-INF/NOTICE*"]
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def releaseRequested = graph.allTasks.any { task ->
+        task.project == project && task.name.toLowerCase().contains("release")
+    }
+    if (releaseRequested && !signingPropertiesFile.exists()) {
+        throw new GradleException(
+                "Release signing is not configured. Restore .signing/signing.properties " +
+                "and the permanent FamilyTasks release keystore before building a release."
+        )
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+dependencies {
+    def composeBom = platform("androidx.compose:compose-bom:2024.09.03")
+    implementation composeBom
+    androidTestImplementation composeBom
+
+    implementation "androidx.activity:activity-compose:1.9.2"
+    implementation "androidx.compose.material3:material3"
+    implementation "androidx.compose.ui:ui-tooling-preview"
+    debugImplementation "androidx.compose.ui:ui-tooling"
+
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.6"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6"
+
+    implementation "androidx.room:room-runtime:2.6.1"
+    implementation "androidx.room:room-ktx:2.6.1"
+    ksp "androidx.room:room-compiler:2.6.1"
+    implementation "net.zetetic:sqlcipher-android:4.6.1"
+
+    implementation "androidx.work:work-runtime-ktx:2.9.1"
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "com.journeyapps:zxing-android-embedded:4.3.0"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20240303"
+}
