@@ -1,0 +1,81 @@
+#!/bin/sh
+set -eu
+
+REPOSITORY_NOREPLY_EMAIL="304850078+alexaistudio@users.noreply.github.com"
+
+is_safe_email() {
+    case "$1" in
+        "$REPOSITORY_NOREPLY_EMAIL"|noreply@github.com|*@users.noreply.github.com)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+extract_email() {
+    printf '%s\n' "$1" | sed -n 's/.*<\([^>]*\)>.*/\1/p'
+}
+
+check_current_identity() {
+    author_email="$(extract_email "$(git var GIT_AUTHOR_IDENT)")"
+    committer_email="$(extract_email "$(git var GIT_COMMITTER_IDENT)")"
+
+    if ! is_safe_email "$author_email"; then
+        printf 'Blocked: Git author email is not a GitHub noreply address: %s\n' "$author_email" >&2
+        exit 1
+    fi
+
+    if ! is_safe_email "$committer_email"; then
+        printf 'Blocked: Git committer email is not a GitHub noreply address: %s\n' "$committer_email" >&2
+        exit 1
+    fi
+}
+
+check_reachable_history() {
+    tab="$(printf '\t')"
+    bad_commits="$(
+        git log --all --format='%H%x09%ae%x09%ce' |
+        while IFS="$tab" read -r commit author_email committer_email; do
+            if ! is_safe_email "$author_email" || ! is_safe_email "$committer_email"; then
+                printf '%s author=%s committer=%s\n' "$commit" "$author_email" "$committer_email"
+            fi
+        done
+    )"
+
+    bad_tags="$(
+        git for-each-ref --format='%(refname:short)%09%(objecttype)%09%(taggeremail)' refs/tags |
+        while IFS="$tab" read -r tag object_type tagger_email; do
+            [ "$object_type" = "tag" ] || continue
+            tagger_email="${tagger_email#<}"
+            tagger_email="${tagger_email%>}"
+            if ! is_safe_email "$tagger_email"; then
+                printf '%s tagger=%s\n' "$tag" "$tagger_email"
+            fi
+        done
+    )"
+
+    if [ -n "$bad_commits" ]; then
+        printf 'Blocked: reachable commits contain non-noreply Git identities:\n%s\n' "$bad_commits" >&2
+        exit 1
+    fi
+
+    if [ -n "$bad_tags" ]; then
+        printf 'Blocked: annotated tags contain non-noreply Git identities:\n%s\n' "$bad_tags" >&2
+        exit 1
+    fi
+}
+
+case "${1:-identity}" in
+    identity)
+        check_current_identity
+        ;;
+    history)
+        check_reachable_history
+        ;;
+    *)
+        printf 'Usage: %s [identity|history]\n' "$0" >&2
+        exit 2
+        ;;
+esac

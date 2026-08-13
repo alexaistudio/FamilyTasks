@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject personal emails in Git history
+        run: ./.githooks/check-email-privacy history
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
