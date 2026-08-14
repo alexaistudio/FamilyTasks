@@ -28,9 +28,9 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
-        android:icon="@drawable/ic_launcher_familytasks_app"
-        android:label="FTasks"
-        android:roundIcon="@drawable/ic_launcher_familytasks_app"
+        android:icon="@mipmap/ic_launcher"
+        android:label="FamilyTasks"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyCalendarV2"
         android:usesCleartextTraffic="true">
