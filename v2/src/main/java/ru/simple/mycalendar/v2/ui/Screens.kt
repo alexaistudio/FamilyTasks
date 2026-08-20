@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1031,7 +1032,7 @@ private fun DaySheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .fillMaxHeight(.8f)
+                .heightIn(max = 651.dp)
                 .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
                 .onGloballyPositioned { sheetBounds = it.boundsInRoot() }
                 .alpha(if (dragging) 0f else 1f)
@@ -1039,11 +1040,10 @@ private fun DaySheet(
             shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
             tonalElevation = 10.dp
         ) {
-            Column(Modifier.fillMaxSize()) {
-                Box(
+            Column(Modifier.fillMaxWidth()) {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(28.dp)
                         .draggable(
                             state = sheetDragState,
                             orientation = Orientation.Vertical,
@@ -1056,22 +1056,38 @@ private fun DaySheet(
                                 }
                             }
                         ),
-                    contentAlignment = Alignment.Center
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
                         Modifier
+                            .height(28.dp)
                             .width(42.dp)
-                            .height(4.dp)
-                            .background(
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f),
-                                RoundedCornerShape(2.dp)
-                            )
-                    )
+                    ) {
+                        Box(
+                            Modifier
+                                .align(Alignment.Center)
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f),
+                                    RoundedCornerShape(2.dp)
+                                )
+                        )
+                    }
+                    if (selectedIds.isEmpty()) {
+                        Text(
+                            date?.format(fullDate)?.replaceFirstChar { it.titlecase(Locale("ru")) } ?: "Без даты",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+                        )
+                    }
                 }
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .weight(1f)
                         .padding(start = 16.dp, end = 16.dp, bottom = 18.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
@@ -1081,13 +1097,6 @@ private fun DaySheet(
                             action = "В корзину",
                             onCancel = { selectedIds = emptySet() },
                             onAction = { onTrashSelected(selectedIds) }
-                        )
-                    } else {
-                        Text(
-                            date?.format(fullDate)?.replaceFirstChar { it.titlecase(Locale("ru")) } ?: "Без даты",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 10.dp)
                         )
                     }
                     tasks.forEach { task ->
