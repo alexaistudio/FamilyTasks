@@ -10,7 +10,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -114,6 +117,7 @@ private val CALENDAR_TASKS_TOP = 28.dp
 // Vertical offset of the first tray row from the tray top: 4 dp surface
 // padding + 7 dp column padding. Used only by the drag hit-testing below.
 private val UNSCHEDULED_HEADER_HEIGHT = 11.dp
+private const val DAY_SHEET_DISMISS_VELOCITY_PX = 1_200f
 
 // Unscheduled rows match the compact line pitch used inside day cells, so the
 // tray height follows the configured calendar font instead of a fixed value.
@@ -129,6 +133,12 @@ internal fun TaskEntity.actualListDateText(): String? = dateOrNull()?.let { date
         timeMinutes?.let { append(", %02d:%02d".format(it / 60, it % 60)) }
     }
 }
+
+internal fun shouldDismissDaySheet(
+    dragOffsetPx: Float,
+    velocityPxPerSecond: Float,
+    thresholdPx: Float
+): Boolean = dragOffsetPx >= thresholdPx || velocityPxPerSecond >= DAY_SHEET_DISMISS_VELOCITY_PX
 
 @Composable
 fun MyCalendarApp(model: V2ViewModel) {
@@ -1005,6 +1015,11 @@ private fun DaySheet(
     var sheetBounds by remember { mutableStateOf<Rect?>(null) }
     var selectedIds by remember(date) { mutableStateOf(emptySet<String>()) }
     var activeDragId by remember { mutableStateOf<String?>(null) }
+    var sheetOffsetY by remember(date) { mutableFloatStateOf(0f) }
+    val dismissThresholdPx = with(LocalDensity.current) { 72.dp.toPx() }
+    val sheetDragState = rememberDraggableState { delta ->
+        sheetOffsetY = (sheetOffsetY + delta).coerceAtLeast(0f)
+    }
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -1016,67 +1031,101 @@ private fun DaySheet(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .heightIn(max = 620.dp)
+                .fillMaxHeight(.8f)
+                .offset { IntOffset(0, sheetOffsetY.roundToInt()) }
                 .onGloballyPositioned { sheetBounds = it.boundsInRoot() }
                 .alpha(if (dragging) 0f else 1f)
                 .clickable(enabled = !dragging) {},
             shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
             tonalElevation = 10.dp
         ) {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                if (selectedIds.isNotEmpty()) {
-                    SelectionHeader(
-                        count = selectedIds.size,
-                        action = "В корзину",
-                        onCancel = { selectedIds = emptySet() },
-                        onAction = { onTrashSelected(selectedIds) }
-                    )
-                } else {
-                    Text(
-                        date?.format(fullDate)?.replaceFirstChar { it.titlecase(Locale("ru")) } ?: "Без даты",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 10.dp)
-                    )
-                }
-                tasks.forEach { task ->
-                    CompactDayTask(
-                        task = task,
-                        selected = task.id in selectedIds,
-                        selectionMode = selectedIds.isNotEmpty(),
-                        onEdit = { onEdit(task) },
-                        onToggle = { onToggleDone(task) },
-                        onSelect = {
-                            selectedIds = if (task.id in selectedIds) selectedIds - task.id else selectedIds + task.id
-                        },
-                        onLongPress = {
-                            if (task.id !in selectedIds) selectedIds = selectedIds + task.id
-                        },
-                        onDragMove = { point ->
-                            if (activeDragId == task.id) {
-                                onDragMove(point)
-                            } else if (sheetBounds?.contains(point) == false) {
-                                activeDragId = task.id
-                                selectedIds = setOf(task.id)
-                                onDragStart(task, point)
+            Column(Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .draggable(
+                            state = sheetDragState,
+                            orientation = Orientation.Vertical,
+                            enabled = !dragging,
+                            onDragStopped = { velocity ->
+                                if (shouldDismissDaySheet(sheetOffsetY, velocity, dismissThresholdPx)) {
+                                    onDismiss()
+                                } else {
+                                    sheetOffsetY = 0f
+                                }
                             }
-                        },
-                        onDragEnd = {
-                            if (activeDragId == task.id) onDragEnd()
-                            activeDragId = null
-                        }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier
+                            .width(42.dp)
+                            .height(4.dp)
+                            .background(
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f),
+                                RoundedCornerShape(2.dp)
+                            )
                     )
                 }
-                repeat((7 - tasks.size).coerceAtLeast(3)) {
-                    Box(
-                        Modifier.fillMaxWidth().height(50.dp)
-                            .combinedClickable(onClick = onAdd, onLongClick = onAdd),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(start = 16.dp, end = 16.dp, bottom = 18.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (selectedIds.isNotEmpty()) {
+                        SelectionHeader(
+                            count = selectedIds.size,
+                            action = "В корзину",
+                            onCancel = { selectedIds = emptySet() },
+                            onAction = { onTrashSelected(selectedIds) }
+                        )
+                    } else {
+                        Text(
+                            date?.format(fullDate)?.replaceFirstChar { it.titlecase(Locale("ru")) } ?: "Без даты",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                    }
+                    tasks.forEach { task ->
+                        CompactDayTask(
+                            task = task,
+                            selected = task.id in selectedIds,
+                            selectionMode = selectedIds.isNotEmpty(),
+                            onEdit = { onEdit(task) },
+                            onToggle = { onToggleDone(task) },
+                            onSelect = {
+                                selectedIds = if (task.id in selectedIds) selectedIds - task.id else selectedIds + task.id
+                            },
+                            onLongPress = {
+                                if (task.id !in selectedIds) selectedIds = selectedIds + task.id
+                            },
+                            onDragMove = { point ->
+                                if (activeDragId == task.id) {
+                                    onDragMove(point)
+                                } else if (sheetBounds?.contains(point) == false) {
+                                    activeDragId = task.id
+                                    selectedIds = setOf(task.id)
+                                    onDragStart(task, point)
+                                }
+                            },
+                            onDragEnd = {
+                                if (activeDragId == task.id) onDragEnd()
+                                activeDragId = null
+                            }
+                        )
+                    }
+                    repeat((7 - tasks.size).coerceAtLeast(3)) {
+                        Box(
+                            Modifier.fillMaxWidth().height(50.dp)
+                                .combinedClickable(onClick = onAdd, onLongClick = onAdd),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f))
+                        }
                     }
                 }
             }
